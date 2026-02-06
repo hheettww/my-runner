@@ -3,22 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Runner</title>
+  <title>Святло</title>
   <style>
-    html, body { height: 100%; margin: 0; background:#111; overflow:hidden; }
+    html, body { height: 100%; margin: 0; background:#111;  }
     .wrap {
       height: 100vh;
       display:flex;
       align-items:center;
       justify-content:center;
-      padding: 0;
+      padding: 8px;
       box-sizing:border-box;
     }
     canvas {
-      width: 100vw;
-      height: 100vh;
+      width: min(980px, 100%);
+      height: auto;
+      max-height: 75vh;
       background: #f7f7f7;
-      border: 0;
+      border: 3px solid #222;
       image-rendering: pixelated;
       touch-action: manipulation;
     }
@@ -45,7 +46,7 @@
     <canvas id="game" width="980" height="300" aria-label="runner game"></canvas>
   </div>
   <div class="hint"><span>Скачок: <b>Space</b> / <b>клік</b> / <b>тап</b>. У скачку разбівай ліхтары.
-    Мэта: <b>50</b>. Пасля канца — <b>Клавіша прабелу</b> або <b>R</b> / тап.</span></div>
+    Мэта: <b>500</b>. Пасля канца — <b>Space</b> або <b>R</b> / тап.</span></div>
 
 <script>
 (() => {
