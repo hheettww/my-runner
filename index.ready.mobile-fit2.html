@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Runner</title>
+  <style>
+    html, body { height: 100%; margin: 0; background:#111;  }
+    .wrap {
+      height: 100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding: 8px;
+      box-sizing:border-box;
+    }
+    canvas {
+      width: min(980px, 100%);
+      height: auto;
+      max-height: 75vh;
+      background: #f7f7f7;
+      border: 3px solid #222;
+      image-rendering: pixelated;
+      touch-action: manipulation;
+    }
+    .hint {
+      position: fixed;
+      left: 12px; right: 12px; bottom: 12px;
+      color:#fff;
+      font: 14px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      text-align:center;
+      user-select:none;
+      pointer-events:none;
+    }
+    .hint span {
+      background: rgba(0,0,0,0.7);
+      padding: 8px 12px;
+      border-radius: 10px;
+      display:inline-block;
+    }
+    .hint b { color:#fff; }
+  
+@media (max-width: 600px) {
+  /* Use small viewport units so iOS Safari address bar doesn't break sizing */
+  canvas {
+    height: auto;
+    max-height: calc(100svh - 96px - env(safe-area-inset-bottom));
+  }
+  .hint { bottom: calc(12px + env(safe-area-inset-bottom)); }
+}
+
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <canvas id="game" width="980" height="300" aria-label="runner game"></canvas>
+  </div>
+  <div class="hint"><span>Скачок: <b>Space</b> / <b>клік</b> / <b>тап</b>. У скачку разбівай ліхтары.
+    Мэта: <b>500</b>. Пасля канца — <b>Space</b> або <b>R</b> / тап.</span></div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  // --- HiDPI ---
+  function resizeForDPR() {
+    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    const rect = canvas.getBoundingClientRect();
+    const cssW = rect.width;
+    const cssH = rect.height;
+    const targetW = Math.round(cssW * dpr);
+    const targetH = Math.round(cssH * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  window.addEventListener('resize', () => { resizeForDPR(); makeBuildings(); });
+  resizeForDPR();
+
+  // --- Game constants ---
+  const W = () => canvas.getBoundingClientRect().width;
+  const H = () => canvas.getBoundingClientRect().height;
+
+  const groundY = () => H() - 42;
+  const gravity = 1850;
+  const jumpVel = 720;
+  const baseSpeed = 360;
+  const speedGain = 12;
+
+  const TARGET_SCORE = 50;
+  const SCORE_PER_LAMP = 10; // 10 фонарей = победа (быстрый прогресс)
+
+  // --- State ---
+  const state = {
+    running: false,
+    gameOver: false,
+    victory: false,
+
+    t: 0,
+    score: 0,
+    best: 0,
+
+    speed: baseSpeed,
+    spawnTimer: 0,
+    nextSpawn: 0.95,
+    lamps: [],
+    particles: [],
+    shake: 0,
+
+    buildings: [],
+    bgScroll: 0,
+
+    totalWindows: 0,
+    litWindows: 0
+  };
+
+  const player = {
+    x: 82,
+    y: 0,
+    w: 34,
+    h: 44,
+    vy: 0,
+    onGround: true,
+    anim: 0
+  };
+
+  // --- Helpers ---
+  function rand(a,b){ return a + Math.random()*(b-a); }
+  function clamp(v,a,b){ return Math.max(a, Math.min(b,v)); }
+  function aabb(ax,ay,aw,ah,bx,by,bw,bh){
+    return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by;
+  }
+
+  // --- Buildings (более реалистичные панельки, без мерцаний) ---
+  function makeBuildings() {
+    state.buildings.length = 0;
+    state.totalWindows = 0;
+    state.litWindows = 0;
+
+    const skylineBase = groundY() - 6;
+    let x = -60;
+
+    while (x < W() + 160) {
+      const bw = Math.round(rand(95, 185));
+      const bh = Math.round(rand(105, 185));
+      const y = skylineBase - bh;
+
+      const pad = Math.round(rand(10, 14));
+      const cellW = Math.round(rand(10, 12));
+      const cellH = Math.round(rand(10, 12));
+      const cols = Math.max(5, Math.floor((bw - pad*2) / cellW));
+      const rows = Math.max(6, Math.floor((bh - pad*2) / cellH));
+
+      // Стабильная сетка окон (без рандома в draw)
+      const windows = Array.from({length: rows}, () =>
+        Array.from({length: cols}, () => true)
+      );
+
+      // "лестничная клетка" — отдельная колонка с редким светом, но ЗАРАНЕЕ, не на каждый кадр
+      const stairCol = Math.random() < 0.78 ? Math.floor(rand(0, cols)) : -1;
+      const stairLit = stairCol >= 0
+        ? Array.from({length: rows}, () => Math.random() < 0.20) // 20% окон в лестнице горит
+        : null;
+
+      const entrances = Math.random() < 0.7 ? Math.floor(rand(1, Math.min(3, cols))) : 0;
+
+      const balconyRows = [];
+      if (Math.random() < 0.75) {
+        const count = Math.floor(rand(1, 3));
+        for (let i=0;i<count;i++) balconyRows.push(Math.floor(rand(1, rows-2)));
+      }
+
+      const tone = rand(0.78, 0.94);
+
+      state.buildings.push({
+        x, y, w: bw, h: bh,
+        pad, cellW, cellH,
+        rows, cols,
+        windows,
+        tone,
+        stairCol,
+        stairLit,
+        entrances,
+        balconyRows
+      });
+
+      state.totalWindows += rows * cols;
+      state.litWindows += rows * cols;
+
+      x += bw + rand(18, 42);
+    }
+
+    applyBlackoutToProgress(true);
+  }
+
+  // Гасим окна так, чтобы к 100 очкам погасло ВСЁ
+  function applyBlackoutToProgress(force=false) {
+    const p = clamp(state.score / TARGET_SCORE, 0, 1);
+    const desiredLit = Math.floor(state.totalWindows * (1 - p));
+    if (!force && state.litWindows <= desiredLit) return;
+
+    const needOff = Math.max(0, state.litWindows - desiredLit);
+
+    let off = 0;
+    for (let tries=0; tries < needOff * 7 && off < needOff; tries++){
+      const b = state.buildings[(Math.random()*state.buildings.length)|0];
+      const r = (Math.random()*b.rows)|0;
+      const c = (Math.random()*b.cols)|0;
+      if (b.windows[r][c]) {
+        b.windows[r][c] = false;
+        off++;
+      }
+    }
+    state.litWindows -= off;
+  }
+
+  // --- Reset ---
+  function reset() {
+    state.running = true;
+    state.gameOver = false;
+    state.victory = false;
+
+    state.t = 0;
+    state.score = 0;
+    state.speed = baseSpeed;
+    state.spawnTimer = 0;
+    state.nextSpawn = rand(0.8, 1.2);
+    state.lamps.length = 0;
+    state.particles.length = 0;
+    state.shake = 0;
+    state.bgScroll = 0;
+
+    player.y = groundY() - player.h;
+    player.vy = 0;
+    player.onGround = true;
+    player.anim = 0;
+
+    makeBuildings();
+  }
+
+  // --- Spawn lamps ---
+  function spawnLamp() {
+    const h = rand(68, 96);
+    const w = 18;
+    const x = W() + 30;
+    const y = groundY() - h;
+    state.lamps.push({
+      x, y, w, h,
+      broken: false,
+      glow: rand(0.65, 1.0),
+      tilt: rand(-0.05, 0.05)
+    });
+  }
+
+  // --- Particles & breaking ---
+  function breakLamp(lamp) {
+    lamp.broken = true;
+
+    state.score = Math.min(TARGET_SCORE, state.score + SCORE_PER_LAMP);
+    state.shake = 0.18;
+
+    applyBlackoutToProgress(false);
+
+    if (state.score >= TARGET_SCORE && !state.victory) {
+      state.victory = true;
+      state.running = false;
+      player.onGround = false;
+      player.vy = 120; // падает
+    }
+
+    const cx = lamp.x + lamp.w/2;
+    const cy = lamp.y + 14;
+    for (let i=0;i<18;i++){
+      state.particles.push({
+        x: cx, y: cy,
+        vx: rand(-240,240),
+        vy: rand(-300, -80),
+        life: rand(0.25,0.6)
+      });
+    }
+  }
+
+  // --- Controls ---
+  function jump() {
+    if (!state.running && !state.victory && !state.gameOver) reset();
+    if (state.gameOver || state.victory) return;
+    if (player.onGround) {
+      player.vy = -jumpVel;
+      player.onGround = false;
+    }
+  }
+  function restart() { reset(); }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.code === 'ArrowUp') {
+      e.preventDefault();
+      if (state.gameOver || state.victory) restart();
+      else jump();
+    }
+    if (e.key?.toLowerCase() === 'r') { e.preventDefault(); restart(); }
+  }, {passive:false});
+
+  canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (state.gameOver || state.victory) restart();
+    else jump();
+  }, {passive:false});
+
+  // --- Drawing ---
+  function drawBackground() {
+    // sky
+    ctx.fillStyle = '#f7f7f7';
+    ctx.fillRect(0,0,W(),H());
+
+    // scanlines / haze
+    ctx.globalAlpha = 0.06;
+    ctx.fillStyle = '#000';
+    for (let y=0;y<H();y+=6) ctx.fillRect(0,y,W(),1);
+    ctx.globalAlpha = 1;
+
+    // buildings (parallax)
+    ctx.save();
+    const scroll = state.bgScroll;
+    for (const b of state.buildings) {
+      const bx = b.x - scroll * 0.35;
+      if (bx + b.w < -100) continue;
+      if (bx > W() + 160) continue;
+
+      const g = Math.floor(230 * b.tone);
+      ctx.fillStyle = `rgb(${g},${g},${g})`;
+      ctx.fillRect(bx, b.y, b.w, b.h);
+
+      // side shade
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(bx + b.w - 10, b.y, 10, b.h);
+      ctx.globalAlpha = 1;
+
+      // roof line
+      ctx.fillStyle = '#222';
+      ctx.fillRect(bx, b.y, b.w, 2);
+
+      // panel seams
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = '#000';
+      for (let yy = b.y+18; yy < b.y+b.h; yy += 22) ctx.fillRect(bx, yy, b.w, 1);
+      for (let xx = bx+22; xx < bx+b.w; xx += 28) ctx.fillRect(xx, b.y, 1, b.h);
+      ctx.globalAlpha = 1;
+
+      // stairwell column (темнее)
+      if (b.stairCol >= 0) {
+        const sx = bx + b.pad + b.stairCol * b.cellW - 2;
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(sx, b.y, 10, b.h);
+        ctx.globalAlpha = 1;
+      }
+
+      // windows (без мерцаний)
+      const wx0 = bx + b.pad;
+      const wy0 = b.y + b.pad;
+      for (let r=0;r<b.rows;r++){
+        for (let c=0;c<b.cols;c++){
+          let on = b.windows[r][c];
+
+          // лестница: стабильный паттерн
+          if (b.stairCol === c && b.stairLit) on = on && b.stairLit[r];
+
+          ctx.fillStyle = on ? '#ffcc33' : '#2f2f2f';
+          ctx.globalAlpha = on ? 0.92 : 0.60;
+          ctx.fillRect(wx0 + c*b.cellW, wy0 + r*b.cellH, 6, 6);
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      // balconies
+      if (b.balconyRows.length) {
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = '#000';
+        for (const rr of b.balconyRows){
+          const yb = wy0 + rr*b.cellH + 7;
+          ctx.fillRect(bx+4, yb, b.w-18, 2);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // entrances
+      if (b.entrances) {
+        ctx.globalAlpha = 0.20;
+        ctx.fillStyle = '#000';
+        for (let k=0;k<b.entrances;k++){
+          const ex = bx + 10 + k*28;
+          const ey = b.y + b.h - 22;
+          ctx.fillRect(ex, ey, 18, 20);
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.restore();
+
+    // ground
+    ctx.fillStyle = '#222';
+    ctx.fillRect(0, groundY()+player.h, W(), 3);
+    ctx.fillStyle = '#444';
+    ctx.fillRect(0, groundY()+player.h+3, W(), 2);
+
+    // GLOBAL DARKNESS: влияет только на фон, герой и фонари рисуются после слоя
+    const darkness = clamp(state.score / TARGET_SCORE, 0, 1);
+    ctx.globalAlpha = darkness * 0.82;
+    ctx.fillStyle = '#000814';
+    ctx.fillRect(0, 0, W(), H());
+    ctx.globalAlpha = 1;
+  }
+
+  // Героя "не трогаем" визуально (никаких доп. композитов) до победы
+  function drawPlayer() {
+    const x = player.x, y = player.y;
+    const wob = (!state.victory && player.onGround) ? Math.sin(player.anim*12)*1.2 : 0;
+
+    if (!state.victory) {
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(x+6, groundY()+player.h-2, 26, 4);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.fillStyle = '#1c1c1c';
+    ctx.fillRect(x+6, y+18+wob, 24, 22);
+
+    ctx.fillStyle = '#eee';
+    ctx.fillRect(x+14, y+22+wob, 6, 5);
+
+    ctx.fillStyle = '#b00';
+    ctx.fillRect(x+17, y+26+wob, 4, 12);
+
+    ctx.fillStyle = '#f0c9b2';
+    ctx.fillRect(x+10, y+2+wob, 30, 22);
+
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x+13, y+5+wob, 10, 4);
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = '#e8b59c';
+    ctx.fillRect(x+8, y+10+wob, 3, 6);
+
+    ctx.fillStyle = '#a9a9a9';
+    ctx.fillRect(x+12, y+3+wob, 8, 2);
+
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(x+27, y+9+wob, 6, 5);
+    ctx.fillRect(x+19, y+9+wob, 6, 5);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(x+31, y+11+wob, 2, 2);
+    ctx.fillRect(x+23, y+11+wob, 2, 2);
+
+    ctx.fillStyle = '#e2aa92';
+    ctx.fillRect(x+33, y+13+wob, 4, 4);
+
+    ctx.fillStyle = '#3b2b22';
+    ctx.fillRect(x+20, y+15+wob, 14, 3);
+    ctx.fillRect(x+18, y+16+wob, 2, 2);
+    ctx.fillRect(x+34, y+16+wob, 2, 2);
+
+    ctx.fillStyle = '#6b2a2a';
+    ctx.fillRect(x+24, y+19+wob, 8, 2);
+
+    // arms / удар рукой
+    if (!state.victory && !player.onGround) {
+      // длинная рука вперёд, чтобы было видно "сбивание" фонарей
+      ctx.fillStyle = '#1c1c1c';
+      // плечо -> предплечье
+      ctx.fillRect(x+22, y+22+wob, 26, 6);
+      ctx.fillRect(x+44, y+20+wob, 12, 6);
+
+      // кисть с синими пальцами
+      ctx.fillStyle = '#3b66ff';
+      ctx.fillRect(x+54, y+20+wob, 8, 7); // ладонь
+      ctx.fillRect(x+62, y+20+wob, 2, 2);
+      ctx.fillRect(x+62, y+23+wob, 2, 2);
+      ctx.fillRect(x+62, y+26+wob, 2, 1);
+    } else {
+      // обычные руки
+      ctx.fillStyle = '#1c1c1c';
+      ctx.fillRect(x+22, y+24+wob, 18, 6);
+      ctx.fillRect(x+36, y+22+wob, 8, 6);
+
+      ctx.fillStyle = '#f0c9b2';
+      ctx.fillRect(x+40, y+22+wob, 6, 6);
+    }
+
+    ctx.fillStyle = '#1c1c1c';
+    const phase = (Math.floor(player.anim*10) % 2);
+    if (!state.victory && player.onGround) {
+      ctx.fillRect(x+10, y+40+wob, 8, 4);
+      ctx.fillRect(x+22, y+40+wob, 8, 4);
+      if (phase===1) ctx.fillRect(x+8, y+42+wob, 12, 3);
+      else ctx.fillRect(x+22, y+42+wob, 12, 3);
+    } else {
+      ctx.fillRect(x+14, y+40+wob, 18, 4);
+    }
+  }
+
+  function drawLamp(l) {
+    if (l.broken) return;
+
+        ctx.save();
+    ctx.translate(l.x + l.w/2, l.y + l.h);
+    ctx.rotate(l.tilt);
+    ctx.translate(-(l.x + l.w/2), -(l.y + l.h));
+
+    // pole
+    ctx.fillStyle = '#111';
+    ctx.fillRect(l.x + 7, l.y + 10, 4, l.h - 10);
+
+    // arm
+    ctx.fillRect(l.x + 7, l.y + 12, 18, 4);
+
+    // head
+    ctx.fillRect(l.x + 21, l.y + 9, 8, 9);
+
+    // glow (чуть сильнее ночью, но без пересвета героя)
+    const night = clamp(state.score / TARGET_SCORE, 0, 1);
+    const g = l.glow * (0.75 + 0.25*Math.sin(state.t*8));
+    ctx.globalAlpha = (0.18 + 0.22*g) * (1 + 0.35*night);
+    ctx.fillStyle = '#ffcc33';
+    ctx.beginPath();
+    ctx.ellipse(l.x + 25, l.y + 18, 18, 10, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // bulb
+    ctx.fillStyle = '#ffcc33';
+    ctx.fillRect(l.x + 23, l.y + 16, 4, 4);
+
+    ctx.restore();
+  }
+
+  function drawParticles() {
+    ctx.fillStyle = '#111';
+    for (const p of state.particles) ctx.fillRect(p.x, p.y, 2, 2);
+  }
+
+  function drawHUD() {
+    const pad = 6;
+
+    function label(text, x, y, fontSize = 16) {
+      ctx.font = `${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+      const w = ctx.measureText(text).width;
+
+      // тёмный фон-плашка
+      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      ctx.fillRect(x - pad, y - fontSize, w + pad*2, fontSize + pad);
+
+      // белый текст
+      ctx.fillStyle = '#fff';
+      ctx.fillText(text, x, y);
+    }
+
+    label(`ЛІК: ${state.score} / ${TARGET_SCORE}`, 14, 22);
+    label(`ЛЕПШЫ: ${state.best}`, 14, 42);
+
+    if (!state.running && !state.gameOver && !state.victory) {
+      label('Тап/Space каб пачаць', W()/2 - 90, H()/2, 16);
+    }
+
+    if (state.gameOver) {
+      label('ГУЛЬНЯ СКОНЧАНА', W()/2 - 70, H()/2 - 8, 20);
+      label('Space/R або тап — нанова', W()/2 - 110, H()/2 + 16, 14);
+    }
+
+    if (state.victory) {
+      label('ПЕРАМОГА — Вы адключылі ўсё святло...', W()/2 - 200, H()/2 - 8, 22);
+      label('Space/R або тап — зноў', W()/2 - 110, H()/2 + 16, 14);
+    }
+  }
+
+  // --- Update loop ---
+  let last = performance.now();
+  function frame(now) {
+    const dt = clamp((now - last) / 1000, 0, 0.033);
+    last = now;
+
+    if (state.running && !state.gameOver && !state.victory) {
+      state.t += dt;
+      player.anim += dt;
+
+      state.speed = baseSpeed + (state.t * speedGain);
+
+      // scroll bg slightly
+      state.bgScroll += state.speed * dt * 0.25;
+
+      // recycle buildings when far left
+      if (state.buildings.length) {
+        const first = state.buildings[0];
+        const bx = first.x - state.bgScroll * 0.35;
+        if (bx + first.w < -140) {
+          const lastB = state.buildings[state.buildings.length - 1];
+          const newX = lastB.x + lastB.w + rand(18, 42);
+
+          first.x = newX;
+          // reset windows to on, then re-apply current blackout progress (stable)
+          for (let r=0;r<first.rows;r++){
+            for (let c=0;c<first.cols;c++){
+              first.windows[r][c] = true;
+            }
+          }
+          // keep stairLit stable, do not regenerate here
+          state.buildings.push(state.buildings.shift());
+          state.litWindows = state.totalWindows;
+          applyBlackoutToProgress(true);
+        }
+      }
+
+      // spawn lamps
+      state.spawnTimer += dt;
+      if (state.spawnTimer >= state.nextSpawn) {
+        state.spawnTimer = 0;
+        state.nextSpawn = rand(0.72, 1.12) * (baseSpeed / state.speed);
+        spawnLamp();
+      }
+
+      // physics
+      player.vy += gravity * dt;
+      player.y += player.vy * dt;
+
+      const gy = groundY() - player.h;
+      if (player.y >= gy) {
+        player.y = gy;
+        player.vy = 0;
+        player.onGround = true;
+      } else {
+        player.onGround = false;
+      }
+
+      // lamps move + collide (только ближние)
+      for (const l of state.lamps) {
+        l.x -= state.speed * dt;
+
+        if (!l.broken) {
+          // collision uses drawn size
+          const hit = aabb(player.x, player.y, player.w, player.h, l.x, l.y, l.w+18, l.h);
+          if (hit) {
+            if (!player.onGround) breakLamp(l);
+            else {
+              state.gameOver = true;
+              state.running = false;
+              state.best = Math.max(state.best, state.score);
+            }
+          }
+        }
+      }
+      state.lamps = state.lamps.filter(l => l.x > -80);
+
+      // particles
+      for (const p of state.particles) {
+        p.vy += 980 * dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.life -= dt;
+      }
+      state.particles = state.particles.filter(p => p.life > 0);
+
+      state.shake = Math.max(0, state.shake - dt*1.2);
+    } else {
+      // idle time flows (lamp flicker)
+      state.t += dt;
+      player.anim += dt;
+
+      if (state.victory) {
+        player.vy += gravity * dt;
+        player.y += player.vy * dt;
+      } else if (!state.gameOver) {
+        player.y = groundY() - player.h;
+        player.onGround = true;
+      }
+    }
+
+    // draw
+    const shakePx = state.shake > 0 ? (Math.random()*2-1) * 6 * state.shake : 0;
+    ctx.save();
+    ctx.translate(shakePx, 0);
+
+    drawBackground();
+
+    // Draw far lamps first (behind player)
+    for (const l of state.lamps) if (!l.collidable) drawLamp(l);
+
+    // Player + near lamps
+    for (const l of state.lamps) if (l.collidable) drawLamp(l);
+    drawPlayer();
+    drawParticles();
+    drawHUD();
+
+    ctx.restore();
+    requestAnimationFrame(frame);
+  }
+
+  // start idle
+  state.running = false;
+  state.gameOver = false;
+  state.victory = false;
+  player.y = groundY() - player.h;
+
+  makeBuildings();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
