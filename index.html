@@ -11,13 +11,13 @@
       display:flex;
       align-items:center;
       justify-content:center;
-      padding: 12px;
+      padding: 6px;
       box-sizing:border-box;
     }
     canvas {
       width: min(980px, 100%);
-      height: auto;
-      max-height: 70vh;
+      height: min(72vh, 520px);
+      max-height: 82vh;
       background: #f7f7f7;
       border: 3px solid #222;
       image-rendering: pixelated;
@@ -42,7 +42,7 @@
   </div>
   <div class="hint">
     Скачок: <b>Space</b> / <b>клік</b> / <b>тап</b>. У скачку разбівай ліхтары.
-    Мэта: <b>50</b>. Пасля канца — <b>Space</b> або <b>R</b> / тап.
+    Мэта: <b>500</b>. Пасля канца — <b>Space</b> або <b>R</b> / тап.
   </div>
 
 <script>
@@ -53,9 +53,11 @@
   // --- HiDPI ---
   function resizeForDPR() {
     const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-    const cssW = canvas.getBoundingClientRect().width;
+    const rect = canvas.getBoundingClientRect();
+    const cssW = rect.width;
+    const cssH = rect.height;
     const targetW = Math.round(cssW * dpr);
-    const targetH = Math.round((cssW * 300/980) * dpr);
+    const targetH = Math.round(cssH * dpr);
     if (canvas.width !== targetW || canvas.height !== targetH) {
       canvas.width = targetW;
       canvas.height = targetH;
@@ -75,7 +77,7 @@
   const baseSpeed = 360;
   const speedGain = 12;
 
-  const TARGET_SCORE = 50;
+  const TARGET_SCORE = 500;
   const SCORE_PER_LAMP = 10; // 10 фонарей = победа (быстрый прогресс)
 
   // --- State ---
@@ -526,36 +528,28 @@
   }
 
   function drawHUD() {
-    const pad = 6;
-
-    function label(text, x, y, fontSize = 16) {
-      ctx.font = `${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
-      const w = ctx.measureText(text).width;
-
-      // тёмный фон-плашка
-      ctx.fillStyle = 'rgba(0,0,0,0.65)';
-      ctx.fillRect(x - pad, y - fontSize, w + pad*2, fontSize + pad);
-
-      // белый текст
-      ctx.fillStyle = '#fff';
-      ctx.fillText(text, x, y);
-    }
-
-    label(`ЛІК: ${state.score} / ${TARGET_SCORE}`, 14, 22);
-    label(`ЛЕПШЫ: ${state.best}`, 14, 42);
+    ctx.fillStyle = '#111';
+    ctx.font = '16px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    ctx.fillText(`ЛІК: ${state.score} / ${TARGET_SCORE}`, 14, 22);
+    ctx.fillText(`ЛЕПШЫ: ${state.best}`, 14, 42);
 
     if (!state.running && !state.gameOver && !state.victory) {
-      label('Тап/Space каб пачаць', W()/2 - 90, H()/2, 16);
+      ctx.fillText('Тап/Space каб пачаць', W()/2 - 90, H()/2);
     }
 
     if (state.gameOver) {
-      label('ГУЛЬНЯ СКОНЧАНА', W()/2 - 70, H()/2 - 8, 20);
-      label('Space/R або тап — нанова', W()/2 - 110, H()/2 + 16, 14);
+      ctx.font = '20px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      ctx.fillText('ГУЛЬНЯ СКОНЧАНА', W()/2 - 58, H()/2 - 8);
+      ctx.font = '14px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      ctx.fillText('Space/R або тап — нанова', W()/2 - 74, H()/2 + 16);
     }
 
     if (state.victory) {
-      label('ПЕРАМОГА — Вы адключылі ўсё святло...', W()/2 - 200, H()/2 - 8, 22);
-      label('Space/R або тап — зноў', W()/2 - 110, H()/2 + 16, 14);
+      ctx.fillStyle = '#fff';
+      ctx.font = '22px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      ctx.fillText('ПЕРАМОГА — Вы отключили весь свет', W()/2 - 190, H()/2 - 8);
+      ctx.font = '14px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      ctx.fillText('Space/R або тап — зноў', W()/2 - 112, H()/2 + 16);
     }
   }
 
