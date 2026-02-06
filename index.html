@@ -41,10 +41,12 @@
     .hint b { color:#fff; }
   
 @media (max-width: 600px) {
+  /* Use small viewport units so iOS Safari address bar doesn't break sizing */
   canvas {
-    height: 45vh;
-    max-height: 45vh;
+    height: auto;
+    max-height: calc(100svh - 96px - env(safe-area-inset-bottom));
   }
+  .hint { bottom: calc(12px + env(safe-area-inset-bottom)); }
 }
 
 </style>
