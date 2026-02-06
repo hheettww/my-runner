@@ -41,12 +41,20 @@
     .hint b { color:#fff; }
   
 @media (max-width: 600px) {
-  /* Use small viewport units so iOS Safari address bar doesn't break sizing */
+  html, body { overflow: hidden; }
+  .wrap { height: 100svh; padding: 0; }
   canvas {
-    height: auto;
-    max-height: calc(100svh - 96px - env(safe-area-inset-bottom));
+    width: 100vw;
+    height: 100svh;
+    max-height: 100svh;
+    border: 0;
   }
-  .hint { bottom: calc(12px + env(safe-area-inset-bottom)); }
+  .hint {
+    position: absolute;
+    left: 0; right: 0;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    padding: 0 12px;
+  }
 }
 
 </style>
@@ -56,7 +64,7 @@
     <canvas id="game" width="980" height="300" aria-label="runner game"></canvas>
   </div>
   <div class="hint"><span>Скачок: <b>Space</b> / <b>клік</b> / <b>тап</b>. У скачку разбівай ліхтары.
-    Мэта: <b>50</b>. Пасля канца — <b>Space</b> або <b>R</b> / тап.</span></div>
+    Мэта: <b>500</b>. Пасля канца — <b>Space</b> або <b>R</b> / тап.</span></div>
 
 <script>
 (() => {
