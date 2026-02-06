@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Святло</title>
+  <title>Runner</title>
   <style>
     html, body { height: 100%; margin: 0; background:#111;  }
     .wrap {
@@ -39,7 +39,15 @@
       display:inline-block;
     }
     .hint b { color:#fff; }
-  </style>
+  
+@media (max-width: 600px) {
+  canvas {
+    height: 85vh;
+    max-height: 85vh;
+  }
+}
+
+</style>
 </head>
 <body>
   <div class="wrap">
