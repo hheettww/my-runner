@@ -5,24 +5,25 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Runner</title>
   <style>
-    html, body { height: 100%; margin: 0; background:#111;  }
+    html, body { height: 100%; margin: 0; background:#111; }
     .wrap {
-      height: 100vh;
+      height: 100%;
       display:flex;
       align-items:center;
       justify-content:center;
-      padding: 8px;
+      padding: 10px;
       box-sizing:border-box;
     }
     canvas {
       width: min(980px, 100%);
       height: auto;
-      max-height: 75vh;
+      max-height: 40vh; /* desktop: smaller */
       background: #f7f7f7;
       border: 3px solid #222;
       image-rendering: pixelated;
       touch-action: manipulation;
     }
+
     .hint {
       position: fixed;
       left: 12px; right: 12px; bottom: 10px;
@@ -39,37 +40,29 @@
       display:inline-block;
     }
     .hint b { color:#fff; }
-  
-@media (max-width: 600px) {
-  html, body { overflow-x: hidden; }
-  .wrap {
-    height: auto;
-    padding: 8px 0 0 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  canvas {
-    width: 100vw;
-    height: 50vh;
-    max-height: 50vh;
-    border: 0;
-  }
-  .hint {
-    position: static;
-    margin: 12px 12px calc(12px + env(safe-area-inset-bottom)) 12px;
-  }
-}
-  .wrap { height: 100svh; padding: 0; }
-  canvas {
-    width: 100vw;
-    height: 100svh;
-    max-height: 100svh;
-    border: 0;
-  }
-  }
 
-</style>
+    /* Mobile: half-screen game, hint below canvas (not overlay) */
+    @media (max-width: 600px) {
+      html, body { overflow-x: hidden; }
+      .wrap {
+        height: auto;
+        padding: 8px 0 0 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+      }
+      canvas {
+        width: 100vw;
+        height: 50vh !important;
+        max-height: 50vh !important;
+      }
+      .hint {
+        position: static;
+        margin: 12px 12px calc(12px + env(safe-area-inset-bottom)) 12px;
+      }
+    }
+  </style>
 </head>
 <body>
   <div class="wrap">
